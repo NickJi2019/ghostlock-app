@@ -50,7 +50,7 @@
 | `6.12.38-android16-5-g3c4da6410bcb-ab13872285-4k`      | Xiaomi 13T                                                       |
 | `6.12.38-android16-5-g844001fb8721-ab14552068-4k`      | OnePlus 15T                                                      |
 
-Kernels are matched by exact `uname -r`; unsupported builds are rejected and the app shows the status at the top. Offsets live in `src/kernels/<uname-release>/offsets.h` — add new builds with the extractor's `--register`.
+Kernels are matched by exact `uname -r`; unsupported builds are rejected and the app shows the status at the top. Built-in profiles live in `app/src/main/assets/kernel_profiles/`, one JSON file per release, with `index.json` as the runtime index and version-family examples under `templates/`.
 
 Rows explicitly marked **Shizuku required** run through a shell UserService. Start Shizuku with ADB and tap the status card to grant access; all other rows use the app's normal execution path.
 
@@ -77,11 +77,11 @@ adb shell /data/local/tmp/ghostlock
 
 ```powershell
 cargo build --release --manifest-path tools/extract_rs/Cargo.toml
-tools/extract_rs/target/release/ghostlock-extract.exe boot.img --xbl-config xbl_config.img --register
+tools/extract_rs/target/release/ghostlock-extract.exe boot.img --xbl-config xbl_config.img --format json --out offsets.json
 tools/extract_rs/target/release/ghostlock-extract.exe OTA.zip --format json --out offsets.json
 ```
 
-`--register` saves the table under `src/kernels/<uname-release>/offsets.h`; `--format c --out offsets.h` dumps a standalone header.
+Use `--format json` for extractor output. To add a built-in profile, complete and validate the matching version-family template, save it as a standalone JSON profile, and add it to `kernel_profiles/index.json`. The old C `offsets.h` registry is deprecated and removed.
 
 ### Preflight
 
