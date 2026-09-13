@@ -1,32 +1,27 @@
-# Kernel Profile Porting Guide
+# Kernel Profile Adaptation Guide
 
-This directory is the sole built-in source of runtime profiles.
+## File Layout
 
-## Layout
+- `app/src/main/assets/kernel_profiles/index.json`: Stores the list of all built-in supported kernel profiles. New profiles must ultimately be added here. Matching is performed by exact `uname -r`.
+- `app/src/main/assets/kernel_profiles/defaults.json`: Default execution parameters shared by all kernel versions. These mainly define wait times/retry counts and can also be customized. See [Common Execution Defaults](defaults.md).
+- `app/src/main/assets/kernel_profiles/<uname-r>.json`: The complete profile corresponding to each specific kernel sub-version; the file name must match the kernel sub-version `release`.
+- `docs/kernel_profiles/templates/`: Template folder. Contains kernel configuration templates for different minor versions.
 
-- `index.json`: Exact-release allowlist mapping `uname -r` to standalone JSON files; unlisted files are not packaged into the generated support index.
-- `defaults.json`: Shared execution tuning for all releases; see [hared Execution Defaults](defaults.md).
-- `<uname-r>.json`: One complete profile per kernel release; filename and `release` must match.
-- `templates/`: Non-runtime kernel-family templates with self-contained English guides.
+## New Device Adaptation Workflow
 
-## Porting a New Device
+1. Run `adb shell uname -r` and keep the complete string; any character difference will cause matching to fail.
+2. Determine the kernel family and open the corresponding document: [5.x](templates/kernel-5.x.template.md), [6.1](templates/kernel-6.1.template.md), [6.6](templates/kernel-6.6.template.md), [6.12](templates/kernel-6.12.template.md).
+3. Copy the corresponding `.template.json`, name it using the full kernel sub-version `release`, and fill in the required fields.
+4. Build the extraction tool under `tools`, run `ghostlock-extract --format json` to extract symbol/BTF data, and transcribe field by field.
+    - `tools/extract_rs` parses offsets from `boot.img` (optionally with `xbl_config.img`), a complete OTA zip, or an `http(s)` link pointing to it. For kallsyms, pass `--kallsyms`, or omit it to directly recover the image's embedded table. `pselect_waiter_shift` and `off_slide_loggers_0_1` are derived by the built-in arm64 disassembler. MediaTek images do not have `xbl_config.img` and usually have no embedded BTF: the physical load address is derived from the kallsyms `_text` (can be overridden with `--phys`).
+5. Verify that all required `off_*` addresses are non-zero, that the task/cred layout comes from the same image, and set `requires_shizuku` according to the runtime identity.
+6. Only override `execution` when there is actual device evidence; otherwise keep the [Common Defaults](defaults.md).
+7. Add `{release,file}` to `index.json`, run `jq` validation, Rust tests, and `./gradlew clean :app:assembleDebug`.
+8. Use `./gradlew installDebug` to repeatedly debug-test on a real device under the same environment, with fixed cores, and a single route; be careful to control the device temperature before testing to prevent CPU throttling;
 
-1. Run `adb shell uname -r` and capture the complete release string; any character difference intentionally prevents a match.
-2. Determine the kernel family and open the matching guide: [5.x](templates/kernel-5.x.template.md), [6.1](templates/kernel-6.1.template.md), [6.6](templates/kernel-6.6.template.md), [6.12](templates/kernel-6.12.template.md).
-3. Copy the corresponding `.template.json`, name it after the exact release, and write the `release` field.
-4. Use `ghostlock-extract --format json` to extract symbol/BTF data; transcribe every field, and never reuse another firmware's `off_*` merely because the major version matches.
-5. Validate that all required `off_*` addresses are nonzero, that task/cred layouts come from the same image, and set `requires_shizuku` according to the runtime identity.
-6. Override `execution` only with measured device evidence; otherwise keep the [shared defaults](defaults.md).
-7. Add `{release,file}` to `index.json`, validate JSON with `jq`, run Rust tests, and run `./gradlew clean :app:assembleDebug`.
-8. Device-test repeatedly under low temperature, fixed CPU cores, and a single route; record App/Shizuku, W1/W2/W3, fallback, and cleanup outcomes.
+## Safety Notes
 
-## Merge Order
-
-`defaults.json` → built-in release JSON → user sparse override → explicit UI CPU selection. Later layers win. Kotlin emits a single `active-profile.json`; Native no longer searches for or merges configuration sources.
-
-## Safety Rules
-
-- `off_* = 0` in a template means "must be extracted", never a runnable default.
-- Incorrect task/cred/multicast layouts can corrupt arbitrary kernel memory, cause a black screen, or reboot the device.
-- Increasing `execution` attempt counts or shortening waits can significantly increase heat and reduce the success rate.
-- Do not submit a new profile as "supported" before it passes the device gate.
+- `off_* = 0` in the template is a symbol offset relative to the kernel image base address and must be extracted.
+- Incorrect task/cred/multicast layout may cause arbitrary kernel memory corruption, a black screen, or a reboot.
+- Increasing the number of attempts or shortening the wait in `execution` may significantly raise temperatures and reduce the success rate.
+- A new profile must not be submitted as “supported” until it passes the real-device gate.

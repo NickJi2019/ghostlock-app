@@ -2,6 +2,8 @@
 
 > 中文版本：[SUPPORTED_DEVICES_ZH.md](SUPPORTED_DEVICES_ZH.md)
 
+Rows explicitly marked **Shizuku required** run through a shell UserService. Start Shizuku with ADB and tap the status card to grant access; all other rows use the app's normal execution path.
+
 | Kernel                                                 | Devices                                                          |
 | ------------------------------------------------------ | ---------------------------------------------------------------- |
 | `5.15.189-android13-8-00016-g51bba4309aac-ab14546557`  | Xperia 1 V (any version with latest OS) — **Shizuku required**                        |

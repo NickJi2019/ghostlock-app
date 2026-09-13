@@ -2,6 +2,8 @@
 
 > English version: [SUPPORTED_DEVICES.md](SUPPORTED_DEVICES.md)
 
+明确标记为**需要 Shizuku**的固件通过 shell UserService 执行。先使用 ADB 启动 Shizuku，再点击顶部支持状态区域授权；其余固件沿用应用内执行路径。
+
 | Kernel                                                 | Devices                                                          |
 | ------------------------------------------------------ | ---------------------------------------------------------------- |
 | `5.15.189-android13-8-00016-g51bba4309aac-ab14546557`  | Xperia 1 V (最新系统·任意地区版本) — **需要 Shizuku**                            |
