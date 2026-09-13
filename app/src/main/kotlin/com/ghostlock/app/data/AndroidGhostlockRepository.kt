@@ -222,8 +222,12 @@ class AndroidGhostlockRepository(context: Context) : GhostlockRepository {
     override suspend fun runExploit(pair: CpuPair, onLog: (String) -> Unit): Int =
         runExploitBinary(pair, "libghostlock.so", onLog)
 
-    override suspend fun runExploitWithShizuku(pair: CpuPair, onLog: (String) -> Unit): Int =
-        shizukuRunner.run(pair, safeModeEnabled, onLog)
+    override suspend fun runExploitWithShizuku(pair: CpuPair, onLog: (String) -> Unit): Int {
+        val profileJson = ProfileConfiguration.resolve(
+            appContext, offsetsFile, System.getProperty("os.version", "").orEmpty(), pair,
+        )
+        return shizukuRunner.run(pair, safeModeEnabled, profileJson, onLog)
+    }
 
     override fun requestShizukuPermission() = shizukuRunner.requestPermission()
 
@@ -244,6 +248,16 @@ class AndroidGhostlockRepository(context: Context) : GhostlockRepository {
             ksuLog.delete()
             val nativeLog = File(workDir, ".ghostlock_native.log")
             nativeLog.writeText("")
+            val activeProfile = File(workDir, "active-profile.json")
+            activeProfile.writeText(
+                ProfileConfiguration.resolve(
+                    appContext,
+                    offsetsFile,
+                    System.getProperty("os.version", "").orEmpty(),
+                    pair,
+                ),
+                StandardCharsets.UTF_8,
+            )
             val ksuOffset = AtomicLong()
             val nativeOffset = AtomicLong()
             val tailer = Thread {
@@ -261,7 +275,9 @@ class AndroidGhostlockRepository(context: Context) : GhostlockRepository {
                 isDaemon = true
                 start()
             }
-            val command = ProcessBuilder(binary.absolutePath)
+            val command = ProcessBuilder(
+                binary.absolutePath, "--profile", activeProfile.absolutePath,
+            )
                 .directory(workDir)
                 .redirectErrorStream(true)
                 .redirectOutput(nativeLog)
