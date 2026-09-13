@@ -5,6 +5,7 @@
 #define __ARM 1
 
 #include "offset.h"
+#include "address_space.h"
 #include "runtime_config.h"
 #include "runtime_time.h"
 
@@ -167,6 +168,8 @@ void disable_rseq_for_thread(void);
 void init_p0_profile(void);
 extern uint64_t p0_kernel_phys_load;
 extern uintptr_t g_init_cred_image;
+extern ResolvedAddresses g_resolved_addresses;
+extern TargetProfile g_target_profile;
 struct kernel_offsets;
 extern const struct kernel_offsets *active_offsets;
 long futex_op(
