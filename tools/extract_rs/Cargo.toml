@@ -33,7 +33,7 @@ lz4_flex = "0.14"
 prost = "0.14"
 
 [profile.release]
-opt-level = "s"
+opt-level = "z"
 lto = "fat"
 codegen-units = 1
 strip = true
