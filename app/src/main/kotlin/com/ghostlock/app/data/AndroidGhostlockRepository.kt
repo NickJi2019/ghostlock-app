@@ -15,6 +15,7 @@ import com.ghostlock.app.domain.model.ExecutionProfile
 import com.ghostlock.app.domain.model.KernelOffsets
 import com.ghostlock.app.domain.model.KernelSnapshot
 import com.ghostlock.app.domain.model.OffsetCandidate
+import com.ghostlock.app.data.ota.OtaPayloadExtractor
 import com.ghostlock.app.domain.model.OffsetImportResult
 import com.ghostlock.app.domain.model.ParseResult
 import com.ghostlock.app.domain.model.SupportedKernels
@@ -283,6 +284,8 @@ class AndroidGhostlockRepository(context: Context) : GhostlockRepository {
 
     override suspend fun parseSource(input: String, xblPath: String?, overwrite: Boolean, onLog: (String) -> Unit): ParseResult {
         val parsedFile = File(filesDir, "offsets_parse.tmp")
+        var tempBootFile: File? = null
+        var tempXblFile: File? = null
         return try {
             if (overwrite) {
                 val pending = pendingParsedEntries
@@ -295,16 +298,35 @@ class AndroidGhostlockRepository(context: Context) : GhostlockRepository {
             }
             val binary = File(appContext.applicationInfo.nativeLibraryDir, ExtractBinaryName)
             if (!binary.isFile) return ParseResult.Failed(1, "missing native binary: ${binary.absolutePath}")
+
+            /* Remote OTA URLs are resolved by the pure-Kotlin extractor so the
+             * Android binary ships without the http stack; local files keep
+             * going straight to the Rust extractor. */
+            val isRemoteUrl = input.startsWith("http://", ignoreCase = true) ||
+                input.startsWith("https://", ignoreCase = true)
+            val (effectiveInput, effectiveXblPath) = if (isRemoteUrl) {
+                val extracted = OtaPayloadExtractor.extractPartitions(
+                    url = input,
+                    workDir = filesDir,
+                    onLog = onLog,
+                )
+                tempBootFile = extracted.bootFile
+                tempXblFile = extracted.xblConfigFile
+                Pair(extracted.bootFile.absolutePath, extracted.xblConfigFile?.absolutePath ?: xblPath)
+            } else {
+                Pair(input, xblPath)
+            }
+
             parsedFile.delete()
             val args = buildList {
-                add(input)
-                if (xblPath != null) {
+                add(effectiveInput)
+                if (effectiveXblPath != null) {
                     add("--xbl-config")
-                    add(xblPath)
+                    add(effectiveXblPath)
                 }
                 addAll(listOf("--format", "json", "--out", parsedFile.absolutePath, "--work-dir", filesDir.absolutePath))
             }
-            onLog("extract: $input")
+            onLog("extract: $effectiveInput")
             val code = runProcess(
                 ProcessBuilder(listOf(binary.absolutePath) + args)
                     .directory(filesDir)
@@ -351,6 +373,8 @@ class AndroidGhostlockRepository(context: Context) : GhostlockRepository {
             ParseResult.Failed(1, error.message)
         } finally {
             parsedFile.delete()
+            tempBootFile?.delete()
+            tempXblFile?.delete()
         }
     }
 

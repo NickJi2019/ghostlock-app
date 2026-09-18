@@ -75,6 +75,9 @@ android {
         versionCode = gitVersionCode
         versionName = appVersionName
     }
+    androidResources {
+        localeFilters += listOf("en", "zh")
+    }
     sourceSets {
         named("main") {
             kotlin.directories.add(supportedKernelsSrc.get().asFile.absolutePath)
@@ -124,6 +127,9 @@ android {
             useLegacyPackaging = true
             excludes += "lib/*/libandroidx.graphics.path.so"
         }
+        dex {
+            useLegacyPackaging = true
+        }
     }
     splits {
         abi {
@@ -166,4 +172,5 @@ dependencies {
     implementation("top.yukonga.miuix.kmp:miuix-ui:0.9.4-rc01")
     implementation("top.yukonga.miuix.kmp:miuix-icons:0.9.4-rc01")
     implementation("top.yukonga.miuix.kmp:miuix-preference:0.9.4-rc01")
+    implementation("org.apache.commons:commons-compress:1.26.0")
 }
