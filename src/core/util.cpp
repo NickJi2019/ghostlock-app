@@ -626,7 +626,7 @@ uintptr_t prepare_kernel_page(const WriteRequest *request) {
   /* mm_structs live in the direct map */
   if (leaked == (uintptr_t)-1 ||
       leaked < KERNELSNITCH_IDENTITY_START ||
-      leaked >= DIRECT_MAP_END) {
+      leaked >= g_direct_map_end) {
     pr_warning("KernelSnitch mm_struct leak failed\n");
     snitch.reset();
     for (size_t i = 0; i < prepare_ctx.mm_cnt; i++) {

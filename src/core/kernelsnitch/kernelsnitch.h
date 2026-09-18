@@ -19,6 +19,10 @@
 #define __INTEL
 #endif
 
+/* Measured direct-map end (never wider than the built-in bound). Owned by the
+ * address-space layer; KernelSnitch only reads it to bound its scan. */
+extern uint64_t g_direct_map_end;
+
 #define FUTEX_SZ (64ULL<<30)
 #define FUTEX_MMAP_SZ (1ULL<<30)
 #ifndef PAGE_SIZE
@@ -281,6 +285,9 @@ static void *__mm_leak(void *arg)
  * scan policy; output: candidate state. Future: kernelsnitch_scan_mm_pass(). */
 static void __run_mm_leak_pass(struct kernelsnitch_shared_state *ks, int try_canonical, int sweep_tags)
 {
+    /* the leak check discards a match past the measured end, so no slice
+     * scans past it */
+    const size_t ceiling = MIN(g_direct_map_end, IDENTITY_END);
     for (size_t i = 0; i < ks->thread_cnt; ++i) {
         struct mm_leak_arg *mm_leak_arg = (struct mm_leak_arg *)SYSCHK(calloc(1, sizeof(struct mm_leak_arg)));
         mm_leak_arg->ks = ks;
@@ -293,6 +300,8 @@ static void __run_mm_leak_pass(struct kernelsnitch_shared_state *ks, int try_can
             mm_leak_arg->range.start = (mm_leak_arg->range.start & ~(COARSE_SZ - 1));
         if ((mm_leak_arg->range.end % COARSE_SZ )!= 0)
             mm_leak_arg->range.end = ((mm_leak_arg->range.end & ~(COARSE_SZ - 1)) + COARSE_SZ);
+        if (mm_leak_arg->range.end > ceiling)
+            mm_leak_arg->range.end = ceiling;
         SYSCHK(pthread_create(&ks->tids[i], 0, __mm_leak, mm_leak_arg));
     }
     for (size_t i = 0; i < ks->thread_cnt; ++i)
@@ -341,7 +350,10 @@ KernelSnitchContext *kernelsnitch_context_init(size_t __mm_struct_sz,
         0, FUTEX_SZ, PROT_NONE, MAP_ANON|MAP_PRIVATE|MAP_NORESERVE, -1, 0)));
     for (size_t addr = 0; addr < FUTEX_SZ; addr += FUTEX_MMAP_SZ)
         SYSCHK(mmap((void *)((size_t)ks->futexes + addr), FUTEX_MMAP_SZ, PROT_WRITE|PROT_READ, MAP_ANON|MAP_SHARED|MAP_FIXED, -1, 0));
-    ks->identity_diff = ((IDENTITY_END - IDENTITY_START)/ks->thread_cnt);
+    /* mm_structs live in the direct map, so the scan stops at its end and never
+     * past the identity range the futexes are drawn from */
+    ks->identity_diff =
+            ((MIN(g_direct_map_end, IDENTITY_END) - IDENTITY_START)/ks->thread_cnt);
 
     ks->futex_addrs = (volatile size_t *)SYSCHK(mmap(0, sizeof(size_t)*(ks->collisions + 1), PROT_WRITE|PROT_READ, MAP_ANON|MAP_SHARED, -1, 0));
 
