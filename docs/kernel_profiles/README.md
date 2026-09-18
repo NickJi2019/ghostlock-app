@@ -1,5 +1,9 @@
 # Kernel Profile Adaptation Guide
 
+> TODO(profile-suggest-01): Only kernel geometry is required. `requires_shizuku`,
+> `execution` retry counts and wait/settle timings are suggestions: a profile may
+> omit or override them, and the shipped default becomes the suggestion.
+
 ## File Layout
 
 - `app/src/main/assets/kernel_profiles/index.json`: Stores the list of all built-in supported kernel profiles. New profiles must ultimately be added here. Matching is performed by exact `uname -r`.

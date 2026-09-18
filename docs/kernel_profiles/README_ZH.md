@@ -1,5 +1,9 @@
 # 内核 Profile 适配指南
 
+> TODO(profile-suggest-01)：只有内核几何为必填；`requires_shizuku`、`execution`
+> 重试次数与等待/超时时间均为建议值：profile 可以省略或覆盖，缺省时随包默认值
+> 即建议值。
+
 ## 文件布局
 
 - `app/src/main/assets/kernel_profiles/index.json`：保存所有内置支持的内核配置文件的列表，新配置文件最终需要添加到此处。通过精确 `uname -r` 匹配。
