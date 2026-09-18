@@ -98,6 +98,7 @@ data class GhostlockUiState(
     val socName: String = "",
     val kernelSupported: Boolean = false,
     val requiresShizuku: Boolean = false,
+    val shizukuEnabled: Boolean = false,
     val shizukuStatus: ShizukuStatus = ShizukuStatus.NOT_REQUIRED,
     val running: Boolean = false,
     val advancedVisible: Boolean = false,
@@ -137,6 +138,7 @@ interface GhostlockActions {
     fun onExportOffsets()
     fun onCpuPairSelected(index: Int)
     fun onSafeModeChanged(enabled: Boolean)
+    fun onShizukuChanged(enabled: Boolean)
     fun onDialogItemSelected(index: Int)
     fun onDialogInputChange(value: String)
     fun onDialogConfirm(value: String)
@@ -482,7 +484,8 @@ private fun PortraitContent(
             RunButton(
                 running = state.running,
                 supported = state.kernelSupported &&
-                    (!state.requiresShizuku || state.shizukuStatus == ShizukuStatus.READY),
+                    (!(state.requiresShizuku || state.shizukuEnabled) ||
+                        state.shizukuStatus == ShizukuStatus.READY),
                 labelRes = R.string.action_run,
                 onClick = actions::onRun,
                 modifier = Modifier.fillMaxWidth(),
@@ -523,7 +526,8 @@ private fun LandscapeContent(
                 RunButton(
                     running = state.running,
                     supported = state.kernelSupported &&
-                        (!state.requiresShizuku || state.shizukuStatus == ShizukuStatus.READY),
+                        (!(state.requiresShizuku || state.shizukuEnabled) ||
+                            state.shizukuStatus == ShizukuStatus.READY),
                     labelRes = R.string.action_run,
                     onClick = actions::onRun,
                     modifier = Modifier.fillMaxWidth(),
@@ -542,7 +546,7 @@ private fun ControlPanel(
     Column(modifier = modifier) {
         ActivationStatusCard(
             supported = state.kernelSupported,
-            requiresShizuku = state.requiresShizuku,
+            requiresShizuku = state.requiresShizuku || state.shizukuEnabled,
             shizukuStatus = state.shizukuStatus,
             onClick = actions::onStatusClick,
             modifier = Modifier.fillMaxWidth(),
@@ -573,6 +577,25 @@ private fun ControlPanel(
                 title = stringResource(R.string.safe_mode_label),
                 summary = stringResource(R.string.safe_mode_summary),
             )
+        }
+        if (!state.requiresShizuku) {
+            Card(modifier = modifier.padding(top = 12.dp)) {
+                SwitchPreference(
+                    checked = state.shizukuEnabled,
+                    onCheckedChange = actions::onShizukuChanged,
+                    title = stringResource(R.string.shizuku_label),
+                    summary = stringResource(
+                        when {
+                            !state.shizukuEnabled -> R.string.shizuku_summary_off
+                            state.shizukuStatus == ShizukuStatus.READY ->
+                                R.string.shizuku_summary_on
+                            state.shizukuStatus == ShizukuStatus.PERMISSION_REQUIRED ->
+                                R.string.shizuku_status_permission_required
+                            else -> R.string.shizuku_status_not_running
+                        }
+                    ),
+                )
+            }
         }
         AnimatedVisibility(
             visible = state.advancedVisible,
